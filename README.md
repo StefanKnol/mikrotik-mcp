@@ -116,9 +116,23 @@ does not exist. Tag a release and let CI publish it:
 git tag v0.1.0 && git push --tags
 ```
 
-(That needs a PyPI Trusted Publisher configured for this project first —
-PyPI → your project → Publishing → add a GitHub publisher for
-`StefanKnol/mikrotik-mcp`, workflow `ci.yml`, environment `pypi`.)
+That needs a PyPI Trusted Publisher first, and because this project does not
+exist on PyPI yet it has to be a **pending** publisher — the per-project
+Publishing tab only appears once a project exists, which is the chicken-and-egg
+this page solves:
+
+> pypi.org → Account settings → **Publishing** → *Add a new pending publisher*
+>
+> | Field | Value |
+> | --- | --- |
+> | PyPI Project Name | `mikrotik-mcp` |
+> | Owner | `StefanKnol` |
+> | Repository name | `mikrotik-mcp` |
+> | Workflow name | `ci.yml` |
+> | Environment name | `pypi` |
+
+The environment name matters: the publish job declares `environment: pypi`, and
+PyPI rejects the upload if they disagree.
 
 **2. The README must carry the ownership token.** The registry looks for
 `mcp-name: io.github.StefanKnol/mikrotik-mcp` in the PyPI description, which is
