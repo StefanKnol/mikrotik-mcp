@@ -151,8 +151,19 @@ curl -sL https://github.com/modelcontextprotocol/registry/releases/latest/downlo
 what authorises the `io.github.StefanKnol/*` namespace. In CI, `login
 github-oidc` does the same from a workflow with `id-token: write`.
 
-Bump `version` in `server.json` and `pyproject.toml` together; the registry
-treats each version as its own row.
+The version appears in four places — `pyproject.toml`, `__version__`,
+`server.json`, and again inside that file's `packages` entry. Rather than
+edit them by hand:
+
+```bash
+uv run python scripts/release.py 0.2.0 --tag
+```
+
+It sets all four, verifies them, commits and tags. The registry treats each
+version as its own row and checks PyPI has the package at exactly that
+version, so the nested `packages[].version` matters as much as the top-level
+one — and it is the one that gets missed, because the manifest still validates
+without it. A test enforces that they agree.
 
 ## Development
 
