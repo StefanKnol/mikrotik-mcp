@@ -168,6 +168,10 @@ It waits for PyPI to actually serve the new version first. The registry fetches
 it cannot see, and that endpoint lags the upload by some seconds — long enough
 that publishing straight afterwards races it.
 
+Re-running it is safe: a version already in the registry is the outcome the job
+exists to produce, so it reports that and passes rather than failing on the
+registry's duplicate refusal.
+
 To publish by hand — recovering a failed run, or a version released before this
 job existed:
 

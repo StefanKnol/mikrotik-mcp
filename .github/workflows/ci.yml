@@ -170,4 +170,17 @@ jobs:
         run: ./mcp-publisher login github-oidc
 
       - name: Publish server.json
-        run: ./mcp-publisher publish
+        # An entry that is already there is the outcome this job exists to
+        # produce, so a re-run or a redundant dispatch is not a failure. Only
+        # that one refusal is swallowed; anything else still fails the job.
+        run: |
+          if output=$(./mcp-publisher publish 2>&1); then
+            echo "$output"
+            exit 0
+          fi
+          echo "$output"
+          if grep -qF "cannot publish duplicate version" <<<"$output"; then
+            echo "::notice::${VERSION#v} is already in the registry; nothing to do."
+            exit 0
+          fi
+          exit 1
