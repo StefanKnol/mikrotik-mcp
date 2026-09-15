@@ -1,5 +1,9 @@
 # mikrotik-mcp
 
+<!-- The MCP registry verifies package ownership by looking for this token in
+     the PyPI description, which is this README. It must sit on its own line. -->
+mcp-name: io.github.StefanKnol/mikrotik-mcp
+
 An MCP server for MikroTik RouterOS, over the **binary API** rather than by
 driving the CLI over SSH.
 
@@ -101,17 +105,40 @@ command and every `MIKROTIK_*` variable, marking which are required and which
 are secret — so a client that browses the registry can generate a correct
 settings form without knowing anything about this server.
 
-It is **not** published automatically. Publishing claims the
-`io.github.StefanKnol/*` namespace against your GitHub identity, which is a
-deliberate act:
+Publishing has an order to it, because the registry verifies that whoever
+publishes an entry actually owns the package it points at.
+
+**1. The package must already be on PyPI.** The registry fetches
+`pypi.org/pypi/mikrotik-mcp/<version>/json` and refuses an entry whose package
+does not exist. Tag a release and let CI publish it:
 
 ```bash
-mcp-publisher login github
-mcp-publisher publish
+git tag v0.1.0 && git push --tags
 ```
 
-Bump `version` here and in `pyproject.toml` together; the registry treats each
-version as its own row.
+(That needs a PyPI Trusted Publisher configured for this project first —
+PyPI → your project → Publishing → add a GitHub publisher for
+`StefanKnol/mikrotik-mcp`, workflow `ci.yml`, environment `pypi`.)
+
+**2. The README must carry the ownership token.** The registry looks for
+`mcp-name: io.github.StefanKnol/mikrotik-mcp` in the PyPI description, which is
+this file — it is at the top, on its own line. That is what proves the person
+publishing the registry entry controls the PyPI package.
+
+**3. Then publish the entry.**
+
+```bash
+curl -sL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
+./mcp-publisher login github
+./mcp-publisher publish
+```
+
+`login github` opens a device flow and proves you are `StefanKnol`, which is
+what authorises the `io.github.StefanKnol/*` namespace. In CI, `login
+github-oidc` does the same from a workflow with `id-token: write`.
+
+Bump `version` in `server.json` and `pyproject.toml` together; the registry
+treats each version as its own row.
 
 ## Development
 
