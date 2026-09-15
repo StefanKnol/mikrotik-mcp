@@ -1,0 +1,48 @@
+[project]
+name = "mikrotik-mcp"
+version = "0.1.0"
+description = "MCP server for MikroTik RouterOS, over the binary API — addresses items by their real .id, never by list position."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Stefan Knol", email = "mail@sknol.nl" }]
+keywords = ["mcp", "model-context-protocol", "mikrotik", "routeros", "network"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "mcp>=2.2.0",
+    "librouteros>=3.4.1",
+]
+
+[project.optional-dependencies]
+# Only needed to load the mcphub plugin shim in-process. mcphub is what imports
+# it, so it is always present when it matters; this is for type checkers and CI.
+mcphub = ["mcphub"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[project.urls]
+Homepage = "https://github.com/StefanKnol/mikrotik-mcp"
+Issues = "https://github.com/StefanKnol/mikrotik-mcp/issues"
+
+# Run it from any MCP client: `uvx mikrotik-mcp`.
+[project.scripts]
+mikrotik-mcp = "mikrotik_mcp.__main__:main"
+
+# Or let mcphub load it in-process, with typed settings fields.
+[project.entry-points."mcphub.plugins"]
+mikrotik = "mikrotik_mcp.plugin:PLUGIN"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mikrotik_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

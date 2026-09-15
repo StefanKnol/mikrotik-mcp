@@ -1,0 +1,86 @@
+name: CI & Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -q
+
+  smoke:
+    name: Launch as an MCP server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - name: Start the installed console script and list its tools
+        # The package is consumed by being *launched*, so building and importing
+        # it is not enough — this exercises the entry point the way a client does.
+        run: |
+          uv run python - <<'PY'
+          import asyncio, os, sys
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          async def main():
+              params = StdioServerParameters(
+                  command=".venv/bin/mikrotik-mcp",
+                  env={**os.environ, "MIKROTIK_HOST": "192.0.2.1",
+                       "MIKROTIK_USERNAME": "u", "MIKROTIK_PASSWORD": "p",
+                       "MIKROTIK_TIMEOUT": "1"},
+              )
+              async with stdio_client(params) as (read, write):
+                  async with ClientSession(read, write) as s:
+                      info = (await s.initialize()).server_info
+                      tools = (await s.list_tools()).tools
+                      print(f"{info.name} {info.version}: {len(tools)} tools")
+                      assert len(tools) == 24, f"expected 24 tools, got {len(tools)}"
+                      # 192.0.2.1 is TEST-NET-1 and never answers, so this proves
+                      # an unreachable router still yields a usable server.
+                      r = await s.call_tool("system_info", {})
+                      assert r.is_error, "an unreachable router should report a tool error"
+                      print("unreachable router handled:", r.content[0].text[:80])
+          asyncio.run(main())
+          PY
+
+  publish:
+    name: Publish to PyPI
+    needs: [test, smoke]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Trusted Publishing: PyPI verifies this workflow's OIDC identity, so
+      # there is no API token to store, rotate or leak.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
