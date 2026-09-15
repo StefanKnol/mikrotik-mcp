@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      registry_version:
+        description: "Publish this already-released version to the MCP registry, e.g. 0.2.0. Leave blank to just run the tests."
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -97,3 +102,72 @@ jobs:
         run: uv run python scripts/release.py "${GITHUB_REF_NAME#v}" --check
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  registry:
+    name: Publish to the MCP registry
+    needs: [publish]
+    # `always()` because the dispatch path deliberately skips `publish` — a
+    # version already on PyPI does not need uploading again. Without it, a
+    # skipped dependency would skip this job too.
+    if: |
+      always()
+      && (needs.publish.result == 'success' || inputs.registry_version != '')
+    runs-on: ubuntu-latest
+    env:
+      # `0.2.0` from a dispatch, `v0.2.0` from a tag; the `v` comes off below.
+      VERSION: ${{ inputs.registry_version || github.ref_name }}
+    permissions:
+      # The registry verifies this workflow's OIDC identity and grants the
+      # `io.github.StefanKnol/*` namespace from it. No token to store, and no
+      # device-flow login to sit through on every release.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Publish the manifest as it stood at that release, not as main
+          # happens to look now.
+          ref: ${{ inputs.registry_version && format('v{0}', inputs.registry_version) || github.ref }}
+
+      - name: The manifest must name the version being published
+        # The tag path already checked this before building. The dispatch path
+        # has not, and naming a version the manifest disagrees with is exactly
+        # the mistake this is here to catch.
+        run: |
+          version="${VERSION#v}"
+          for got in $(jq -r '.version, .packages[].version' server.json); do
+            if [ "$got" != "$version" ]; then
+              echo "::error::server.json says ${got}, but publishing ${version}"
+              exit 1
+            fi
+          done
+          echo "server.json agrees on ${version}"
+
+      - name: Wait for PyPI to serve this version
+        # The registry refuses an entry whose package it cannot fetch, and
+        # PyPI's JSON API lags the upload by some seconds — so publishing
+        # straight after the upload job races it and loses often enough to
+        # matter. Poll the exact URL the registry will use.
+        run: |
+          version="${VERSION#v}"
+          url="https://pypi.org/pypi/mikrotik-mcp/${version}/json"
+          for attempt in $(seq 1 30); do
+            if curl -fsS -o /dev/null "$url"; then
+              echo "PyPI is serving ${version} after ${attempt} attempt(s)"
+              exit 0
+            fi
+            echo "attempt ${attempt}: ${version} not on PyPI yet"
+            sleep 10
+          done
+          echo "::error::PyPI did not serve ${version} within five minutes" >&2
+          exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate by OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server.json
+        run: ./mcp-publisher publish

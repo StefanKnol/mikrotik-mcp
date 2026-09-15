@@ -156,17 +156,28 @@ PyPI rejects the upload if they disagree.
 this file — it is at the top, on its own line. That is what proves the person
 publishing the registry entry controls the PyPI package.
 
-**3. Then publish the entry.**
+**3. The registry entry publishes itself.** The `registry` job in `ci.yml`
+runs after the PyPI upload on the same tag, authenticating with
+`mcp-publisher login github-oidc`. GitHub signs a short-lived OIDC token, the
+registry verifies it and grants the `io.github.StefanKnol/*` namespace from the
+repository owner. There is no secret to store and no device-flow login to sit
+through on each release.
+
+It waits for PyPI to actually serve the new version first. The registry fetches
+`pypi.org/pypi/mikrotik-mcp/<version>/json` and refuses an entry whose package
+it cannot see, and that endpoint lags the upload by some seconds — long enough
+that publishing straight afterwards races it.
+
+To publish by hand — recovering a failed run, or a version released before this
+job existed:
 
 ```bash
 curl -sL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
-./mcp-publisher login github
-./mcp-publisher publish
+./mcp-publisher login github && ./mcp-publisher publish
 ```
 
-`login github` opens a device flow and proves you are `StefanKnol`, which is
-what authorises the `io.github.StefanKnol/*` namespace. In CI, `login
-github-oidc` does the same from a workflow with `id-token: write`.
+`login github` opens the device flow and proves you are `StefanKnol`, which
+authorises the same namespace the OIDC path gets without asking.
 
 The version appears in four places — `pyproject.toml`, `__version__`,
 `server.json`, and again inside that file's `packages` entry. Rather than

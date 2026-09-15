@@ -136,7 +136,7 @@ def main() -> int:
     subprocess.run(["git", "tag", f"v{args.version}"], cwd=ROOT, check=True)
     print(f"\nCommitted and tagged v{args.version}. Push with:")
     print(f"  git push && git push origin v{args.version}")
-    print("Then, once PyPI has it:  ./mcp-publisher publish")
+    print("CI takes it from there: tests, PyPI, then the MCP registry entry.")
     return 0
 
 
