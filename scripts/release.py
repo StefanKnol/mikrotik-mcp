@@ -9,6 +9,12 @@ version, so a manifest a step ahead of PyPI is rejected rather than ignored.
 
     uv run python scripts/release.py 0.2.0          # edit and show the diff
     uv run python scripts/release.py 0.2.0 --tag    # also commit and tag
+    uv run python scripts/release.py 0.2.0 --check  # verify only, change nothing
+
+`--check` is what CI runs against the git tag before publishing. Without it a
+tag and the version inside it can disagree, and the build then goes to PyPI
+under a number nobody chose: the tag says v0.3.0, the artefact says 0.2.0, and
+the registry manifest points at whichever of the two does not exist.
 """
 
 from __future__ import annotations
@@ -83,10 +89,23 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("version", help="New version, e.g. 0.2.0")
     parser.add_argument("--tag", action="store_true", help="Commit and create the v<version> tag")
+    parser.add_argument("--check", action="store_true",
+                        help="Verify the files already name this version; change nothing")
     args = parser.parse_args()
 
     if not SEMVER.match(args.version):
         raise SystemExit(f"{args.version!r} does not look like a version")
+
+    if args.check:
+        problems = verify(args.version)
+        if problems:
+            raise SystemExit(
+                f"version mismatch: these do not say {args.version}: " + ", ".join(problems)
+                + f"\n  pyproject.toml says {read_current()}."
+                + "\n  Run scripts/release.py to set it everywhere, then re-tag."
+            )
+        print(f"all four places agree on {args.version}")
+        return 0
 
     current = read_current()
     if current == args.version:

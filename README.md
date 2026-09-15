@@ -77,11 +77,28 @@ pinning is what makes the connection authenticated rather than merely encrypted.
 
 ## Tools
 
-24 of them, covering system info, interfaces, IP addressing, firewall filter
-and NAT, DHCP leases, static DNS, routes and logs — plus `ros_list`, which
-reads any RouterOS path and so covers everything without a dedicated tool.
+34 of them, covering system info, interfaces, IP addressing, firewall filter
+(IPv4 and IPv6), firewall address lists, NAT, DHCP leases, DNS, routes and logs
+— plus `ros_list`, which reads any RouterOS path and so covers everything
+without a dedicated tool.
 
 There is deliberately **no** generic write escape hatch.
+
+Three things worth knowing before the first call:
+
+- **Writes take an `id` (`*7`), never a `position`.** Both appear in every list
+  result. `position` is where a rule currently sits in evaluation order; it
+  shifts whenever anything is added, removed or moved, and it is counted across
+  the whole table rather than within the chain you filtered to. Passing one to
+  a write is rejected rather than guessed at.
+- **IPv4 and IPv6 are separate rule sets.** The firewall tools take a `family`
+  and default to `ipv4`, so a device can read as locked down while its IPv6
+  table is empty and therefore accepting everything. Listing IPv4 reports the
+  IPv6 rule count for exactly this reason.
+- **Address lists hold state no configuration export shows.** Entries a rule
+  adds at runtime carry a timeout and exist only in memory. Ask
+  `list_address_list_entries` for a `count_only` first: a populated block list
+  can hold tens of thousands.
 
 ## With mcphub
 

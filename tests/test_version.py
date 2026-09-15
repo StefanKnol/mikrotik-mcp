@@ -54,3 +54,16 @@ def test_readme_carries_the_ownership_token():
         "the `mcp-name:` token must be on its own line in the README, which is "
         "the PyPI description the registry validates against"
     )
+
+
+def test_the_changelog_documents_this_version(version):
+    """A version bump with nothing said about it is half a release.
+
+    The changelog is the only place that records *why* a consumer's
+    integration might need attention; the four version strings agreeing says
+    nothing about what changed between them.
+    """
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    assert re.search(rf"^## {re.escape(version)}\s*$", changelog, re.M), (
+        f"CHANGELOG.md has no `## {version}` section — add one before releasing"
+    )

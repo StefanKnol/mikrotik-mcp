@@ -164,7 +164,15 @@ class RouterOS:
                 self._api = None
 
     async def _call(self, fn_name: str, path: tuple[str, ...], *args: Any, **kwargs: Any) -> Any:
-        """Run one API operation, reconnecting once if the session went away."""
+        """Run one API operation, reconnecting once if the session went away.
+
+        `fn_name` is either a method on `AsyncPath` to await, or one of three
+        modes that have to be *iterated* instead: `librouteros` splits its API
+        between coroutines (`add`, `update`, `remove`) and async generator
+        functions (`__aiter__`, `__call__`, `rawCmd`). Awaiting a generator
+        function raises `TypeError` before a single byte reaches the device,
+        so telling the two apart is not a style choice.
+        """
         async with self._lock:
             for attempt in (1, 2):
                 api = await self._api_handle()
@@ -172,6 +180,19 @@ class RouterOS:
                     target = api.path(*path)
                     if fn_name == "iter":
                         return [dict(row) async for row in target]
+                    if fn_name == "cmd":
+                        # `AsyncPath.__call__` is an async *generator* function.
+                        # Awaiting it is the bug that made every `move` fail
+                        # with a bare "Error executing tool" and no RouterOS
+                        # message: the generator body never ran, so nothing was
+                        # sent and nothing came back to explain the silence.
+                        return [dict(row) async for row in target(*args, **kwargs)]
+                    if fn_name == "raw":
+                        # Query words (`?list=blocked`) are filtered by the
+                        # device. The alternative — pulling every row and
+                        # filtering here — is untenable on an address list with
+                        # tens of thousands of entries.
+                        return [dict(row) async for row in api.rawCmd(*args)]
                     return await getattr(target, fn_name)(*args, **kwargs)
                 except TrapError as exc:
                     # A trap is RouterOS saying no — a bad argument, a missing
@@ -207,11 +228,60 @@ class RouterOS:
         await self._call("remove", path, item_id)
 
     async def run(self, *path: str, command: str, **fields: Any) -> list[dict[str, Any]]:
-        """Invoke a non-CRUD command such as `move` or `print` with arguments."""
-        result = await self._call("__call__", path, command, **_ros_values(fields))
-        if hasattr(result, "__aiter__"):
-            return _jsonable([dict(r) async for r in result])
-        return _jsonable(list(result or []))
+        """Invoke a non-CRUD command such as `move`, `make-static` or `unset`."""
+        return _jsonable(await self._call("cmd", path, command, **_ros_values(fields)))
+
+    async def unset(self, *path: str, item_id: str, field: str) -> None:
+        """Clear one property, returning it to its RouterOS default.
+
+        RouterOS takes a single `value-name` per call, so clearing several
+        fields is several calls. Setting a property to an empty string is not
+        the same operation: for `src-address` that is a validation error, and
+        for `comment` it leaves an empty comment rather than no comment.
+        """
+        await self.run(*path, command="unset", **{".id": item_id, "value-name": field})
+
+    async def move(self, *path: str, item_id: str, destination: str | None = None) -> None:
+        """Move an item before `destination`, or to the end of the list.
+
+        Both ends are real `.id` values. RouterOS also accepts ordinals here,
+        and they are exactly what must not be used: the list shifts under any
+        concurrent change, so an ordinal read a moment ago can address a
+        different rule by the time it arrives.
+        """
+        fields: dict[str, Any] = {"numbers": item_id}
+        if destination is not None:
+            fields["destination"] = destination
+        await self.run(*path, command="move", **fields)
+
+    async def query(
+        self, *path: str, where: dict[str, str] | None = None, proplist: tuple[str, ...] = (),
+    ) -> list[dict[str, Any]]:
+        """List items, filtered and projected *by the device*.
+
+        `/ip/firewall/address-list` routinely holds tens of thousands of
+        entries. Fetching all of them to keep a handful is slow enough to hit
+        the API timeout, so the predicate travels to the router instead.
+        """
+        cmd = "/" + "/".join((*path, "print"))
+        predicates = [f"?{key}={value}" for key, value in (where or {}).items()]
+        words: list[str] = []
+        if proplist:
+            words.append("=.proplist=" + ",".join(proplist))
+        words.extend(predicates)
+        # RouterOS evaluates query words as a stack. Combining them is left to
+        # the caller, so the AND is written out rather than assumed: get this
+        # wrong and `list=x` plus `dynamic=no` silently matches either set.
+        words.extend(["?#&"] * max(0, len(predicates) - 1))
+        return _jsonable(await self._call("raw", path, cmd, *words))
+
+    async def count(self, *path: str, where: dict[str, str] | None = None) -> int:
+        """How many items match, without transferring them.
+
+        `.proplist=.id` is the smallest row RouterOS will return; there is no
+        server-side count in the binary API.
+        """
+        return len(await self.query(*path, where=where, proplist=(".id",)))
 
 
 def _ros_values(fields: dict[str, Any]) -> dict[str, Any]:

@@ -70,5 +70,21 @@ async def test_build_server_performs_no_io():
 
     server = build_server(RouterConfig(host="203.0.113.1", username="u", password="p", timeout=0.1))
     tools = await server.list_tools()
-    assert len(tools) == 24
-    assert "list_firewall_rules" in {t.name for t in tools}
+    names = {t.name for t in tools}
+
+    # Named rather than counted: a count tells you a tool went missing without
+    # telling you which, and the two that matter most here are the ones a
+    # firewall cannot be read or reordered without.
+    assert {"list_firewall_rules", "move_firewall_rule", "list_address_lists",
+            "list_address_list_entries", "get_dns_settings", "move_nat_rule",
+            "update_nat_rule", "update_dns_static"} <= names
+    assert len(names) == len(tools), "tool names must be unique"
+
+
+async def test_every_tool_describes_itself():
+    """A tool with no description is one the model has to guess at."""
+    from mikrotik_mcp.client import RouterConfig
+
+    server = build_server(RouterConfig(host="203.0.113.1", username="u", password="p"))
+    undocumented = [t.name for t in await server.list_tools() if not (t.description or "").strip()]
+    assert undocumented == []

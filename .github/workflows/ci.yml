@@ -59,8 +59,15 @@ jobs:
                   async with ClientSession(read, write) as s:
                       info = (await s.initialize()).server_info
                       tools = (await s.list_tools()).tools
+                      names = {t.name for t in tools}
                       print(f"{info.name} {info.version}: {len(tools)} tools")
-                      assert len(tools) == 24, f"expected 24 tools, got {len(tools)}"
+                      # Named, not counted: a count says a tool vanished without
+                      # saying which one.
+                      required = {"list_firewall_rules", "move_firewall_rule",
+                                  "add_firewall_rule", "update_firewall_rule",
+                                  "list_address_lists", "list_address_list_entries",
+                                  "move_nat_rule", "update_nat_rule", "update_dns_static"}
+                      assert required <= names, f"missing: {sorted(required - names)}"
                       # 192.0.2.1 is TEST-NET-1 and never answers, so this proves
                       # an unreachable router still yields a usable server.
                       r = await s.call_tool("system_info", {})
@@ -82,5 +89,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
+      - name: The tag and the version inside it must agree
+        # Nothing else enforces this. A v0.3.0 tag on a tree that still says
+        # 0.2.0 builds and uploads 0.2.0, so the release goes out under a number
+        # nobody chose and server.json points at a PyPI version that will never
+        # exist. Checked before the build, so a mismatch costs nothing.
+        run: uv run python scripts/release.py "${GITHUB_REF_NAME#v}" --check
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@release/v1

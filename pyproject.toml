@@ -1,6 +1,6 @@
 [project]
 name = "mikrotik-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for MikroTik RouterOS, over the binary API — addresses items by their real .id, never by list position."
 readme = "README.md"
 requires-python = ">=3.11"
