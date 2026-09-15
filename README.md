@@ -93,6 +93,26 @@ ships, which gives typed host/username/password fields in mcphub's settings UI.
 Nicer to configure, but an in-process plugin can read everything the hub holds.
 Install it into the hub's environment to use this route.
 
+## Publishing to the MCP registry
+
+`server.json` is the manifest for the [official MCP registry](https://registry.modelcontextprotocol.io),
+validated against the published schema. It declares the `uvx mikrotik-mcp`
+command and every `MIKROTIK_*` variable, marking which are required and which
+are secret — so a client that browses the registry can generate a correct
+settings form without knowing anything about this server.
+
+It is **not** published automatically. Publishing claims the
+`io.github.StefanKnol/*` namespace against your GitHub identity, which is a
+deliberate act:
+
+```bash
+mcp-publisher login github
+mcp-publisher publish
+```
+
+Bump `version` here and in `pyproject.toml` together; the registry treats each
+version as its own row.
+
 ## Development
 
 ```bash
