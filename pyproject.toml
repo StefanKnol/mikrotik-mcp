@@ -1,6 +1,6 @@
 [project]
 name = "mikrotik-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server for MikroTik RouterOS, over the binary API — addresses items by their real .id, never by list position."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,9 +19,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Only needed to load the mcphub plugin shim in-process. mcphub is what imports
-# it, so it is always present when it matters; this is for type checkers and CI.
-mcphub = ["mcphub"]
+# No `mcphub` extra. `mcphub.plugins.base` is supplied by the hub itself, which
+# is what imports `mikrotik_mcp.plugin` in the first place — and the `mcphub`
+# name on PyPI belongs to an unrelated project, so declaring it as a dependency
+# installed something that could never provide that module.
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [project.urls]

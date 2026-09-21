@@ -3,6 +3,43 @@
 Versions follow [semantic versioning](https://semver.org). While the major
 version is 0, a minor bump is where breaking changes go.
 
+## 0.3.0
+
+### Changed — affects mcphub grants
+
+- `set_firewall_rule_enabled` and `set_nat_rule_enabled` are no longer marked
+  destructive, which moves them from `admin` to `user` on an mcphub. Disabling
+  a rule keeps the rule, its comment and its position, and re-enabling restores
+  exactly what was there — `destructiveHint` is about irreversible loss, not
+  about writing. They are also the reversible way to find out whether a rule is
+  responsible for something, so gating them at the same level as removal left a
+  `user` with no safe way to test at all. Review your grants if you were relying
+  on the old split.
+- `set_interface_enabled` stays destructive, and now says why: disabling the
+  interface a request arrived through severs the only route back, so what is
+  lost is the ability to undo it.
+
+### Fixed
+
+- The `mcphub` optional dependency is gone. `mcphub.plugins.base` is supplied by
+  the hub, which is what imports the plugin in the first place; the `mcphub`
+  name on PyPI belongs to an unrelated project, so `pip install
+  mikrotik-mcp[mcphub]` installed something that could never provide that
+  module.
+- The plugin now subclasses `PluginDefaults`, which is what supplies `variant()`
+  — the hook that builds an instance for a pinned version. Without it, listing
+  `BackendInstance` fields falls to this package, and a field the hub adds later
+  would be dropped silently and only at a pinned version.
+
+### Added
+
+- `MikroTikPlugin.validate()` reports a bad port, a malformed TLS fingerprint,
+  or a fingerprint set while TLS is off, against the field it belongs to rather
+  than as a connection failure later.
+- A test that pins every tool's mcphub level by name. The hub enforces levels
+  from annotations alone, so an unannotated tool silently becomes `user`; this
+  fails the suite until a new tool is classified deliberately.
+
 ## 0.2.0
 
 ### Fixed

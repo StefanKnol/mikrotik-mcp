@@ -462,7 +462,11 @@ def register(mcp: MCPServer, device: RouterOS, *, title: str) -> None:
                                 flags=("disabled", "running")))
 
     @tool(name="set_interface_enabled", annotations=ToolAnnotations(
-        title="Enable/Disable Interface", destructive_hint=True, idempotent_hint=True, open_world_hint=False))
+        title="Enable/Disable Interface",
+        # Destructive, unlike the rule toggles: disabling the interface the
+        # request arrived through severs the only route back, so what is lost
+        # is the ability to undo it.
+        destructive_hint=True, idempotent_hint=True, open_world_hint=False))
     async def set_interface_enabled(
         ctx: Context,
         interface_id: Annotated[str, Field(description="The interface 'id' from list_interfaces, e.g. '*3'.")],
@@ -751,7 +755,13 @@ def register(mcp: MCPServer, device: RouterOS, *, title: str) -> None:
                       "cleared": clearing, "before": _detail(before), "after": _detail(after)})
 
     @tool(name="set_firewall_rule_enabled", annotations=ToolAnnotations(
-        title="Enable/Disable Firewall Rule", destructive_hint=True, idempotent_hint=True, open_world_hint=False))
+        title="Enable/Disable Firewall Rule",
+        # Not destructive: the rule, its comment and its position all survive,
+        # and re-enabling restores the previous state exactly. It is the
+        # reversible alternative this tool's own docstring recommends over
+        # removal, so gating it behind the same level as removal would leave a
+        # caller with no safe option at all.
+        destructive_hint=False, idempotent_hint=True, open_world_hint=False))
     async def set_firewall_rule_enabled(
         ctx: Context,
         rule_id: Annotated[str, Field(description="The rule 'id' from list_firewall_rules, e.g. '*7'.")],
@@ -1158,7 +1168,9 @@ def register(mcp: MCPServer, device: RouterOS, *, title: str) -> None:
         return _dump(await _reorder(NAT, rule_id, before_rule_id, "NAT rule"))
 
     @tool(name="set_nat_rule_enabled", annotations=ToolAnnotations(
-        title="Enable/Disable NAT Rule", destructive_hint=True, idempotent_hint=True, open_world_hint=False))
+        title="Enable/Disable NAT Rule",
+        # Reversible and lossless, as for the filter rules above.
+        destructive_hint=False, idempotent_hint=True, open_world_hint=False))
     async def set_nat_rule_enabled(
         ctx: Context,
         rule_id: Annotated[str, Field(description="The rule 'id' from list_nat_rules, e.g. '*7'.")],

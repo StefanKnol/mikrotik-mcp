@@ -9,12 +9,28 @@ The isolated route — mcphub launching `uvx mikrotik-mcp` as a subprocess — i
 the better default for most people, because a plugin loaded into the hub can
 read every credential the hub holds and this one cannot be made to forget that.
 Use this shim when you are building your own image and want the nicer form.
+
+Subclassing `PluginDefaults` rather than starting from nothing is what supplies
+`variant()`, which builds the instance for a pinned version. Writing that by
+hand means listing `BackendInstance` fields, and a field added to the hub later
+would then be dropped — silently, and only at a pinned version, which is the
+hardest kind of difference to notice.
+
+This plugin does not ask for a data directory. Everything it reads and writes
+lives on the router; there is no local state to keep, and a path the hub names
+but nothing uses is clutter on the settings page.
 """
 
 from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
-from mcphub.plugins.base import BackendInstance, CheckResult, ConfigField
+from mcphub.plugins.base import (
+    BackendInstance,
+    CheckResult,
+    ConfigField,
+    FieldError,
+    PluginDefaults,
+)
 
 from .client import RouterConfig, RouterError, RouterOS
 from .server import build_server
@@ -32,7 +48,7 @@ def _config(instance: BackendInstance) -> RouterConfig:
     )
 
 
-class MikroTikPlugin:
+class MikroTikPlugin(PluginDefaults):
     id = "mikrotik"
     name = "MikroTik RouterOS"
     description = (
@@ -67,6 +83,48 @@ class MikroTikPlugin:
         ),
         ConfigField("timeout", "Timeout (seconds)", type="number", default=10, required=False),
     )
+
+    def validate(self, instance: BackendInstance) -> list[FieldError]:
+        """Refuse a configuration that cannot work, field by field.
+
+        Each of these otherwise surfaces as a connection failure at `check`
+        time, where the real cause is a typo three fields up.
+        """
+        errors: list[FieldError] = []
+
+        try:
+            port = int(instance.get("port", 8729) or 8729)
+        except (TypeError, ValueError):
+            errors.append(FieldError("port", "Must be a whole number, e.g. 8729."))
+        else:
+            if not 1 <= port <= 65535:
+                errors.append(FieldError("port", "Must be between 1 and 65535."))
+
+        fingerprint = str(instance.get("tls_fingerprint", "") or "").strip()
+        if fingerprint:
+            if not instance.get("use_tls", True):
+                errors.append(FieldError(
+                    "tls_fingerprint",
+                    "Not used while TLS is off — there is no certificate to pin.",
+                ))
+            else:
+                digits = fingerprint.replace(":", "").replace(" ", "")
+                if len(digits) != 64 or not all(c in "0123456789abcdefABCDEF" for c in digits):
+                    errors.append(FieldError(
+                        "tls_fingerprint",
+                        "A SHA-256 fingerprint is 64 hex characters, with or without colons. "
+                        "Read it from the router with `/certificate print detail`.",
+                    ))
+
+        try:
+            timeout = float(instance.get("timeout", 10) or 10)
+        except (TypeError, ValueError):
+            errors.append(FieldError("timeout", "Must be a number of seconds."))
+        else:
+            if timeout <= 0:
+                errors.append(FieldError("timeout", "Must be greater than zero."))
+
+        return errors
 
     def build(self, instance: BackendInstance) -> MCPServer:
         return build_server(_config(instance), title=instance.title, name=f"mikrotik-{instance.slug}")

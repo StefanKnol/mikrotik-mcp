@@ -102,17 +102,86 @@ Three things worth knowing before the first call:
 
 ## With mcphub
 
-Two ways, and the first is the better default:
+[mcphub](https://github.com/StefanKnol/mcphub) puts MCP servers behind one
+sign-in and grants them out per account. One router is one backend, at its own
+`/mcp/<slug>`, registered in a client as its own connector.
 
-**Launched as a subprocess** by [mcphub](https://github.com/StefanKnol/mcphub),
-configured as a command — `uvx mikrotik-mcp` — with credentials as encrypted
-environment variables. It runs in its own process and cannot read credentials
-held for other backends.
+### Adding it
 
-**Loaded in-process** via the `mcphub.plugins` entry point this package also
-ships, which gives typed host/username/password fields in mcphub's settings UI.
-Nicer to configure, but an in-process plugin can read everything the hub holds.
-Install it into the hub's environment to use this route.
+**From the registry** — the better default. *Add from registry*, search for
+`mikrotik-mcp`, and the hub builds the settings form from `server.json` and
+launches `uvx mikrotik-mcp` when you enable the backend. It runs in its own
+process and cannot read credentials the hub holds for anything else. Backends
+added this way start disabled: open it, look at the tool list, then enable.
+
+**As a plugin** — install this package into the hub's own environment and
+`mikrotik` appears as a backend kind, with typed fields and a Test button that
+reports the router's identity and RouterOS version. Nicer to configure, but an
+in-process plugin can read every credential the hub holds. Use it when you
+build your own hub image.
+
+### What to set
+
+Either route asks for the same things. As environment variables:
+
+| Variable | Default | |
+| --- | --- | --- |
+| `MIKROTIK_HOST` | — | Router address. Required. |
+| `MIKROTIK_USERNAME` | — | Required. A dedicated user, not `admin`; its group needs the `api` policy. |
+| `MIKROTIK_PASSWORD` | — | Required. |
+| `MIKROTIK_PORT` | `8729` | `8729` for api-ssl, `8728` for plaintext. |
+| `MIKROTIK_TLS` | `true` | Turning it off sends the router password over the network in the clear. |
+| `MIKROTIK_TLS_FINGERPRINT` | — | SHA-256 of the router certificate. Pinning it is what makes the TLS connection authenticated rather than merely encrypted. |
+| `MIKROTIK_TIMEOUT` | `10` | Seconds. |
+
+No data directory: everything this server reads and writes lives on the router,
+so there is no local state to keep. Leave **Give this server a data directory**
+unticked.
+
+### Levels
+
+The hub reads `readOnlyHint` and `destructiveHint` from each tool and enforces
+the grant's level from those alone — a tool above the level is left out of
+`tools/list` and refused if called anyway.
+
+| Level | Gets | |
+| --- | --- | --- |
+| `viewer` | 17 tools | Reads the whole configuration and changes nothing. |
+| `user` | +7 tools | Adds rules and entries, and disables or re-enables them. |
+| `admin` | +10 tools | Deletes, edits in place, and reorders. |
+
+**viewer** — `connectivity_check`, `get_dns_settings`, `get_firewall_rule`,
+`get_logs`, `get_nat_rule`, `list_address_list_entries`, `list_address_lists`,
+`list_dhcp_leases`, `list_dns_adlist`, `list_dns_static`, `list_firewall_rules`,
+`list_interfaces`, `list_ip_addresses`, `list_nat_rules`, `list_routes`,
+`ros_list`, `system_info`.
+
+**user** adds `add_address_list_entry`, `add_dns_static`, `add_firewall_rule`,
+`add_nat_rule`, `make_lease_static`, `set_firewall_rule_enabled`,
+`set_nat_rule_enabled`. Each of these writes, and none of them takes anything
+away: adding a rule is a write, not a destruction, and disabling one keeps the
+rule, its comment and its position so that re-enabling restores exactly what
+was there. Disabling is the reversible way to find out whether a rule is
+responsible for something, so it sits here rather than behind `admin` — the
+alternative would leave a `user` with no safe way to test at all.
+
+**admin** adds the destructive ten:
+
+| Tool | What is lost |
+| --- | --- |
+| `remove_firewall_rule` | The rule. The returned copy is the only record. |
+| `remove_nat_rule` | The rule. |
+| `remove_dns_static` | The entry. |
+| `remove_address_list_entry` | The entry. A dynamic one returns when its rule next matches; a static one does not. |
+| `update_firewall_rule` | The previous values of whatever it sets or clears. |
+| `update_nat_rule` | The same. |
+| `update_dns_static` | The same. |
+| `move_firewall_rule` | The previous order, which is the entire semantics of a firewall. |
+| `move_nat_rule` | The same. |
+| `set_interface_enabled` | Nothing on disk — but disabling the interface the request came in through severs the only route back, and nothing here can undo that remotely. |
+
+A test pins every one of these assignments by name, so a tool added later fails
+the suite until someone decides which level it belongs to.
 
 ## Publishing to the MCP registry
 
